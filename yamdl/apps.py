@@ -5,8 +5,8 @@ from django.apps import AppConfig
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connections
-from django.utils.autoreload import autoreload_started
 from django.db.models.signals import class_prepared
+from django.utils.autoreload import autoreload_started
 from django.utils.module_loading import import_string
 
 from .loader import ModelLoader
@@ -21,7 +21,12 @@ class YamdlConfig(AppConfig):
         """
         Startup and signal handling code
         """
+        self.loader_class = import_string(getattr(settings, "YAMDL_LOADER", "yamdl.loader.ModelLoader"))
+        if not issubclass(self.loader_class, ModelLoader):
+            raise ImproperlyConfigured("YAMDL_LOADER must be an instance of ModelLoader")
+
         class_prepared.connect(self.populate_models, dispatch_uid="yamdl-populate-models")
+        autoreload_started.connect(self.autoreload_ready, dispatch_uid="yamdl-autoreload-ready")
 
     def populate_models(self, **kwargs):
         if not self.loaded:
@@ -58,11 +63,6 @@ class YamdlConfig(AppConfig):
                         "Yamdl directory %s does not exist" % directory
                     )
 
-            self.loader_class = import_string(getattr(settings, "YAMDL_LOADER", "yamdl.loader.ModelLoader"))
-            if not issubclass(self.loader_class, ModelLoader):
-                raise ImproperlyConfigured(
-                    "YAMDL_LOADER must be an instance of ModelLoader"
-                )
 
             self.loader = self.loader_class(self.connection, settings.YAMDL_DIRECTORIES)
             with warnings.catch_warnings():
@@ -74,12 +74,9 @@ class YamdlConfig(AppConfig):
 
             self.loaded = True
 
-            # Add autoreload watches for our files
-            autoreload_started.connect(self.autoreload_ready)
-
     def autoreload_ready(self, sender, **kwargs):
         for directory in settings.YAMDL_DIRECTORIES:
-            for ext in self.loader.EXT_MARKDOWN:
+            for ext in self.loader_class.EXT_MARKDOWN:
                 sender.watch_dir(directory, f"**/*{ext}")
-            for ext in self.loader.EXT_YAML:
+            for ext in self.loader_class.EXT_YAML:
                 sender.watch_dir(directory, f"**/*{ext}")
