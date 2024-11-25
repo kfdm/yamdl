@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connections
 from django.utils.autoreload import autoreload_started
+from django.db.models.signals import class_prepared
 from django.utils.module_loading import import_string
 
 from .loader import ModelLoader
@@ -20,6 +21,9 @@ class YamdlConfig(AppConfig):
         """
         Startup and signal handling code
         """
+        class_prepared.connect(self.populate_models, dispatch_uid="yamdl-populate-models")
+
+    def populate_models(self, **kwargs):
         if not self.loaded:
             # Verify we have a db alias to write to.
             self.db_alias = getattr(settings, "YAMDL_DATABASE_ALIAS", "yamdl")
